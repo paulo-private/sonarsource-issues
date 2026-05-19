@@ -1,6 +1,5 @@
-# Replace `your-org/billing-reviewers` with the GitHub organization and team slug
-# that should be requested as the team reviewer for billing code changes.
-/src/billing/ @your-org/billing-reviewers
+# Team requested for billing code changes.
+/src/billing/ @paulo-private/billing-reviewers
 
 # Optional: keep ownership of repository metadata separate.
-/.github/CODEOWNERS @your-org/platform-admins
+/.github/CODEOWNERS @paulo-private/platform-admins
