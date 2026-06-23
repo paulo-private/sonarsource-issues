@@ -64,40 +64,36 @@ def apply_coupon(total_cents: int, coupon_code: str | None) -> int:
         return total_cents
 
 
+def _mature_account_discount(spend_cents: int, has_contract: bool, is_trial: bool) -> int:
+    if spend_cents > 1_000_000 and has_contract:
+        if is_trial:
+            return 10
+        return 30
+    if spend_cents > 2_000_000:
+        return 20
+    if spend_cents > 1_000_000:
+        return 15
+    if has_contract:
+        return 8
+    if is_trial:
+        return 0
+    return 5
+
+
+def _new_account_discount(spend_cents: int, has_contract: bool, is_trial: bool) -> int:
+    if spend_cents > 500_000:
+        if has_contract:
+            return 12
+        return 4
+    if is_trial:
+        return 0
+    return 2
+
+
 def calculate_enterprise_discount(account_age_days: int, spend_cents: int, has_contract: bool, is_trial: bool) -> int:
-    discount = 0
     if account_age_days > 365:
-        if spend_cents > 1_000_000:
-            if has_contract:
-                if not is_trial:
-                    discount = 30
-                else:
-                    discount = 10
-            else:
-                if spend_cents > 2_000_000:
-                    discount = 20
-                else:
-                    discount = 15
-        else:
-            if has_contract:
-                discount = 8
-            else:
-                if is_trial:
-                    discount = 0
-                else:
-                    discount = 5
-    else:
-        if spend_cents > 500_000:
-            if has_contract:
-                discount = 12
-            else:
-                discount = 4
-        else:
-            if is_trial:
-                discount = 0
-            else:
-                discount = 2
-    return discount
+        return _mature_account_discount(spend_cents, has_contract, is_trial)
+    return _new_account_discount(spend_cents, has_contract, is_trial)
 
 
 def run_manual_adjustment(account_id: str) -> str:
@@ -112,7 +108,7 @@ def hash_customer_email(email: str) -> str:
 def parse_discount_from_environment() -> int | None:
     try:
         return int(os.environ["DISCOUNT_PERCENT"])
-    except:
+    except (KeyError, ValueError):
         return None
 
 

@@ -59,6 +59,31 @@ def main(argv=sys.argv[1:]):  # noqa: D103
         print(line)
 
 
+def _get_packages_merged(prefix_path, subdirectory, packages):
+    # return if workspace is empty
+    if not (prefix_path / subdirectory).is_dir():
+        return
+    # find all files in the subdirectory
+    for p in (prefix_path / subdirectory).iterdir():
+        if not p.is_file():
+            continue
+        if p.name.startswith('.'):
+            continue
+        add_package_runtime_dependencies(p, packages)
+
+
+def _get_packages_isolated(prefix_path, subdirectory, packages):
+    # for each subdirectory look for the package specific file
+    for p in prefix_path.iterdir():
+        if not p.is_dir():
+            continue
+        if p.name.startswith('.'):
+            continue
+        p = p / subdirectory / p.name
+        if p.is_file():
+            add_package_runtime_dependencies(p, packages)
+
+
 def get_packages(prefix_path, merged_install):
     """
     Find packages based on colcon-specific files created during installation.
@@ -76,26 +101,9 @@ def get_packages(prefix_path, merged_install):
     # must match colcon_core.location.get_relative_package_index_path()
     subdirectory = 'share/colcon-core/packages'
     if merged_install:
-        # return if workspace is empty
-        if not (prefix_path / subdirectory).is_dir():
-            return packages
-        # find all files in the subdirectory
-        for p in (prefix_path / subdirectory).iterdir():
-            if not p.is_file():
-                continue
-            if p.name.startswith('.'):
-                continue
-            add_package_runtime_dependencies(p, packages)
+        _get_packages_merged(prefix_path, subdirectory, packages)
     else:
-        # for each subdirectory look for the package specific file
-        for p in prefix_path.iterdir():
-            if not p.is_dir():
-                continue
-            if p.name.startswith('.'):
-                continue
-            p = p / subdirectory / p.name
-            if p.is_file():
-                add_package_runtime_dependencies(p, packages)
+        _get_packages_isolated(prefix_path, subdirectory, packages)
 
     # remove unknown dependencies
     pkg_names = set(packages.keys())
@@ -188,45 +196,41 @@ def get_commands(pkg_name, prefix, primary_extension, additional_extension):
     return commands
 
 
-def process_dsv_file(
-    dsv_path, prefix, primary_extension=None, additional_extension=None
+def _process_dsv_line(
+    line, i, dsv_path, prefix, primary_extension, additional_extension,
+    basenames
 ):
-    commands = []
-    if _include_comments():
-        commands.append(FORMAT_STR_COMMENT_LINE.format_map({'comment': dsv_path}))
-    with open(dsv_path, 'r') as h:
-        content = h.read()
-    lines = content.splitlines()
-
-    basenames = OrderedDict()
-    for i, line in enumerate(lines):
-        # skip over empty or whitespace-only lines
-        if not line.strip():
-            continue
+    # skip over empty or whitespace-only lines
+    if not line.strip():
+        return []
+    try:
+        type_, remainder = line.split(';', 1)
+    except ValueError:
+        raise RuntimeError(
+            "Line %d in '%s' doesn't contain a semicolon separating the "
+            'type from the arguments' % (i + 1, dsv_path))
+    if type_ != DSV_TYPE_SOURCE:
+        # handle non-source lines
         try:
-            type_, remainder = line.split(';', 1)
-        except ValueError:
+            return handle_dsv_types_except_source(
+                type_, remainder, prefix)
+        except RuntimeError as e:
             raise RuntimeError(
-                "Line %d in '%s' doesn't contain a semicolon separating the "
-                'type from the arguments' % (i + 1, dsv_path))
-        if type_ != DSV_TYPE_SOURCE:
-            # handle non-source lines
-            try:
-                commands += handle_dsv_types_except_source(
-                    type_, remainder, prefix)
-            except RuntimeError as e:
-                raise RuntimeError(
-                    "Line %d in '%s' %s" % (i + 1, dsv_path, e)) from e
-        else:
-            # group remaining source lines by basename
-            path_without_ext, ext = os.path.splitext(remainder)
-            if path_without_ext not in basenames:
-                basenames[path_without_ext] = set()
-            assert ext.startswith('.')
-            ext = ext[1:]
-            if ext in (primary_extension, additional_extension):
-                basenames[path_without_ext].add(ext)
+                "Line %d in '%s' %s" % (i + 1, dsv_path, e)) from e
+    # group remaining source lines by basename
+    path_without_ext, ext = os.path.splitext(remainder)
+    if path_without_ext not in basenames:
+        basenames[path_without_ext] = set()
+    assert ext.startswith('.')
+    ext = ext[1:]
+    if ext in (primary_extension, additional_extension):
+        basenames[path_without_ext].add(ext)
+    return []
 
+
+def _resolve_basenames(
+    basenames, prefix, primary_extension, additional_extension
+):
     # add the dsv extension to each basename if the file exists
     for basename, extensions in basenames.items():
         if not os.path.isabs(basename):
@@ -234,6 +238,7 @@ def process_dsv_file(
         if os.path.exists(basename + '.dsv'):
             extensions.add('dsv')
 
+    commands = []
     for basename, extensions in basenames.items():
         if not os.path.isabs(basename):
             basename = os.path.join(prefix, basename)
@@ -254,63 +259,94 @@ def process_dsv_file(
                 FORMAT_STR_INVOKE_SCRIPT.format_map({
                     'prefix': prefix,
                     'script_path': basename + '.' + additional_extension})]
+    return commands
+
+
+def process_dsv_file(
+    dsv_path, prefix, primary_extension=None, additional_extension=None
+):
+    commands = []
+    if _include_comments():
+        commands.append(FORMAT_STR_COMMENT_LINE.format_map({'comment': dsv_path}))
+    with open(dsv_path, 'r') as h:
+        content = h.read()
+    lines = content.splitlines()
+
+    basenames = OrderedDict()
+    for i, line in enumerate(lines):
+        commands += _process_dsv_line(
+            line, i, dsv_path, prefix, primary_extension,
+            additional_extension, basenames)
+
+    commands += _resolve_basenames(
+        basenames, prefix, primary_extension, additional_extension)
 
     return commands
 
 
-def handle_dsv_types_except_source(type_, remainder, prefix):
+def _handle_set_types(type_, remainder, prefix):
     commands = []
-    if type_ in (DSV_TYPE_SET, DSV_TYPE_SET_IF_UNSET):
-        try:
-            env_name, value = remainder.split(';', 1)
-        except ValueError:
-            raise RuntimeError(
-                "doesn't contain a semicolon separating the environment name "
-                'from the value')
-        try_prefixed_value = os.path.join(prefix, value) if value else prefix
-        if os.path.exists(try_prefixed_value):
-            value = try_prefixed_value
-        if type_ == DSV_TYPE_SET:
-            commands += _set(env_name, value)
-        elif type_ == DSV_TYPE_SET_IF_UNSET:
-            commands += _set_if_unset(env_name, value)
+    try:
+        env_name, value = remainder.split(';', 1)
+    except ValueError:
+        raise RuntimeError(
+            "doesn't contain a semicolon separating the environment name "
+            'from the value')
+    try_prefixed_value = os.path.join(prefix, value) if value else prefix
+    if os.path.exists(try_prefixed_value):
+        value = try_prefixed_value
+    if type_ == DSV_TYPE_SET:
+        commands += _set(env_name, value)
+    elif type_ == DSV_TYPE_SET_IF_UNSET:
+        commands += _set_if_unset(env_name, value)
+    else:
+        assert False
+    return commands
+
+
+def _handle_non_duplicate_types(type_, remainder, prefix):
+    commands = []
+    try:
+        env_name_and_values = remainder.split(';')
+    except ValueError:
+        raise RuntimeError(
+            "doesn't contain a semicolon separating the environment name "
+            'from the values')
+    env_name = env_name_and_values[0]
+    values = env_name_and_values[1:]
+    for value in values:
+        if not value:
+            value = prefix
+        elif not os.path.isabs(value):
+            value = os.path.join(prefix, value)
+        if (
+            type_ == DSV_TYPE_PREPEND_NON_DUPLICATE_IF_EXISTS and
+            not os.path.exists(value)
+        ):
+            comment = f'skip extending {env_name} with not existing ' \
+                f'path: {value}'
+            if _include_comments():
+                commands.append(
+                    FORMAT_STR_COMMENT_LINE.format_map({'comment': comment}))
+        elif type_ == DSV_TYPE_APPEND_NON_DUPLICATE:
+            commands += _append_unique_value(env_name, value)
         else:
-            assert False
+            commands += _prepend_unique_value(env_name, value)
+    return commands
+
+
+def handle_dsv_types_except_source(type_, remainder, prefix):
+    if type_ in (DSV_TYPE_SET, DSV_TYPE_SET_IF_UNSET):
+        return _handle_set_types(type_, remainder, prefix)
     elif type_ in (
         DSV_TYPE_APPEND_NON_DUPLICATE,
         DSV_TYPE_PREPEND_NON_DUPLICATE,
         DSV_TYPE_PREPEND_NON_DUPLICATE_IF_EXISTS
     ):
-        try:
-            env_name_and_values = remainder.split(';')
-        except ValueError:
-            raise RuntimeError(
-                "doesn't contain a semicolon separating the environment name "
-                'from the values')
-        env_name = env_name_and_values[0]
-        values = env_name_and_values[1:]
-        for value in values:
-            if not value:
-                value = prefix
-            elif not os.path.isabs(value):
-                value = os.path.join(prefix, value)
-            if (
-                type_ == DSV_TYPE_PREPEND_NON_DUPLICATE_IF_EXISTS and
-                not os.path.exists(value)
-            ):
-                comment = f'skip extending {env_name} with not existing ' \
-                    f'path: {value}'
-                if _include_comments():
-                    commands.append(
-                        FORMAT_STR_COMMENT_LINE.format_map({'comment': comment}))
-            elif type_ == DSV_TYPE_APPEND_NON_DUPLICATE:
-                commands += _append_unique_value(env_name, value)
-            else:
-                commands += _prepend_unique_value(env_name, value)
+        return _handle_non_duplicate_types(type_, remainder, prefix)
     else:
         raise RuntimeError(
             'contains an unknown environment hook type: ' + type_)
-    return commands
 
 
 env_state = {}
