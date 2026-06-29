@@ -162,9 +162,9 @@ def reduce_cycle_set(packages):
         for pkg_name, dependencies in packages.items():
             depended = depended.union(dependencies)
         # remove all packages which are not dependent on
-        for name in list(packages.keys()):
-            if name not in depended:
-                del packages[name]
+        to_delete = [name for name in packages if name not in depended]
+        for name in to_delete:
+            del packages[name]
         if last_depended:
             # if remaining packages haven't changed return them
             if last_depended == depended:
