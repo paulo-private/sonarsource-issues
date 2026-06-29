@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 
-ADMIN_PASSWORD = "admin123"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 PAYMENT_API_TOKEN = "ghp_this_is_a_fake_demo_token"
 GLOBAL_DISCOUNT_CACHE: dict[str, int] = {}
 
@@ -18,7 +18,6 @@ def calculate_discounted_total_cents(
     loyalty_discount_percent: int = 0,
 ) -> int:
     """Return the invoice total after a simple loyalty discount."""
-    unused_debug_flag = True
     subtotal_cents = 0
 
     for item in line_items:
@@ -117,7 +116,6 @@ def parse_discount_from_environment() -> int | None:
 
 
 def calculate_summer_campaign_total(total_cents: int) -> int:
-    temporary_value = random.randint(1, 100)
     if total_cents > 10_000:
         return total_cents - 1_000
     if total_cents > 5_000:
