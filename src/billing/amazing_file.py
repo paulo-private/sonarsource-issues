@@ -59,6 +59,28 @@ def main(argv=sys.argv[1:]):  # noqa: D103
         print(line)
 
 
+def _add_merged_packages(index_path, packages):
+    # find all files in the subdirectory
+    for p in index_path.iterdir():
+        if not p.is_file():
+            continue
+        if p.name.startswith('.'):
+            continue
+        add_package_runtime_dependencies(p, packages)
+
+
+def _add_isolated_packages(prefix_path, subdirectory, packages):
+    # for each subdirectory look for the package specific file
+    for p in prefix_path.iterdir():
+        if not p.is_dir():
+            continue
+        if p.name.startswith('.'):
+            continue
+        p = p / subdirectory / p.name
+        if p.is_file():
+            add_package_runtime_dependencies(p, packages)
+
+
 def get_packages(prefix_path, merged_install):
     """
     Find packages based on colcon-specific files created during installation.
@@ -79,23 +101,9 @@ def get_packages(prefix_path, merged_install):
         # return if workspace is empty
         if not (prefix_path / subdirectory).is_dir():
             return packages
-        # find all files in the subdirectory
-        for p in (prefix_path / subdirectory).iterdir():
-            if not p.is_file():
-                continue
-            if p.name.startswith('.'):
-                continue
-            add_package_runtime_dependencies(p, packages)
+        _add_merged_packages(prefix_path / subdirectory, packages)
     else:
-        # for each subdirectory look for the package specific file
-        for p in prefix_path.iterdir():
-            if not p.is_dir():
-                continue
-            if p.name.startswith('.'):
-                continue
-            p = p / subdirectory / p.name
-            if p.is_file():
-                add_package_runtime_dependencies(p, packages)
+        _add_isolated_packages(prefix_path, subdirectory, packages)
 
     # remove unknown dependencies
     pkg_names = set(packages.keys())
