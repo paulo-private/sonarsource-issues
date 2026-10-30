@@ -59,6 +59,41 @@ def main(argv=sys.argv[1:]):  # noqa: D103
         print(line)
 
 
+def collect_merged_packages(index_path, packages):
+    """
+    Collect packages from the package index of a merged install.
+
+    :param Path index_path: The path of the package index directory
+    :param dict packages: The mapping to add the packages to
+    """
+    # find all files in the subdirectory
+    for p in index_path.iterdir():
+        if not p.is_file():
+            continue
+        if p.name.startswith('.'):
+            continue
+        add_package_runtime_dependencies(p, packages)
+
+
+def collect_isolated_packages(prefix_path, subdirectory, packages):
+    """
+    Collect packages from the per-package subdirectories of an install.
+
+    :param Path prefix_path: The install prefix path of all packages
+    :param str subdirectory: The relative path of the package index
+    :param dict packages: The mapping to add the packages to
+    """
+    # for each subdirectory look for the package specific file
+    for p in prefix_path.iterdir():
+        if not p.is_dir():
+            continue
+        if p.name.startswith('.'):
+            continue
+        p = p / subdirectory / p.name
+        if p.is_file():
+            add_package_runtime_dependencies(p, packages)
+
+
 def get_packages(prefix_path, merged_install):
     """
     Find packages based on colcon-specific files created during installation.
@@ -79,23 +114,9 @@ def get_packages(prefix_path, merged_install):
         # return if workspace is empty
         if not (prefix_path / subdirectory).is_dir():
             return packages
-        # find all files in the subdirectory
-        for p in (prefix_path / subdirectory).iterdir():
-            if not p.is_file():
-                continue
-            if p.name.startswith('.'):
-                continue
-            add_package_runtime_dependencies(p, packages)
+        collect_merged_packages(prefix_path / subdirectory, packages)
     else:
-        # for each subdirectory look for the package specific file
-        for p in prefix_path.iterdir():
-            if not p.is_dir():
-                continue
-            if p.name.startswith('.'):
-                continue
-            p = p / subdirectory / p.name
-            if p.is_file():
-                add_package_runtime_dependencies(p, packages)
+        collect_isolated_packages(prefix_path, subdirectory, packages)
 
     # remove unknown dependencies
     pkg_names = set(packages.keys())
