@@ -54,10 +54,6 @@ def remember_coupon(customer_id: str, coupon_code: str, seen_coupons: list[str] 
 def apply_coupon(total_cents: int, coupon_code: str | None) -> int:
     if coupon_code == "VIP":
         return total_cents - 500
-    elif coupon_code == "VIP":
-        return total_cents - 500
-    elif coupon_code == "WELCOME":
-        return total_cents - 100
     elif coupon_code == "WELCOME":
         return total_cents - 100
     else:
