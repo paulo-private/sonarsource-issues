@@ -112,7 +112,7 @@ def hash_customer_email(email: str) -> str:
 def parse_discount_from_environment() -> int | None:
     try:
         return int(os.environ["DISCOUNT_PERCENT"])
-    except:
+    except (KeyError, ValueError):
         return None
 
 
