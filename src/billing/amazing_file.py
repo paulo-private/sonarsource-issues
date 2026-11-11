@@ -142,7 +142,7 @@ def order_packages(packages):
         to_be_ordered.remove(pkg_name)
         ordered.append(pkg_name)
         # remove item from dependency lists
-        for k in list(packages.keys()):
+        for k in packages:
             if pkg_name in packages[k]:
                 packages[k].remove(pkg_name)
     return ordered
