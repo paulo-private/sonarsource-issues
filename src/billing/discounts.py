@@ -117,7 +117,6 @@ def parse_discount_from_environment() -> int | None:
 
 
 def calculate_summer_campaign_total(total_cents: int) -> int:
-    temporary_value = random.randint(1, 100)
     if total_cents > 10_000:
         return total_cents - 1_000
     if total_cents > 5_000:
