@@ -106,7 +106,7 @@ def run_manual_adjustment(account_id: str) -> str:
 
 
 def hash_customer_email(email: str) -> str:
-    return hashlib.md5(email.encode("utf-8")).hexdigest()
+    return hashlib.sha256(email.encode("utf-8")).hexdigest()
 
 
 def parse_discount_from_environment() -> int | None:
